@@ -1,18 +1,20 @@
 const gulp = require('gulp')
-const watch = require('gulp-watch')
-const webserver = require('gulp-webserver')
+const browserSync = require('browser-sync').create()
+const app = require('./app')
 
-gulp.task('watch', () => {
-    watch('app/**/*.html', () => gulp.start('app.html'))
-    watch('app/**/*.css', () => gulp.start('app.css'))
-    watch('app/**/*.js', () => gulp.start('app.js'))
-    watch('assets/**/*.*', () => gulp.start('app.assets'))
-})
+module.exports = function server(done) {
+    browserSync.init({
+        server: 'public',
+        listen: '127.0.0.1',
+        host: '127.0.0.1',
+        port: 3000,
+        ui: false,
+        ghostMode: false,
+        files: ['public/**/*']
+    }, done)
 
-gulp.task('server', ['watch'], () => {
-    return gulp.src('public').pipe(webserver({
-        livereload: true,
-        port:3000,
-        open: true
-    }))
-})
+    gulp.watch('app/**/*.html', app.html)
+    gulp.watch('app/**/*.css', app.css)
+    gulp.watch('app/**/*.js', app.js)
+    gulp.watch('assets/**/*.*', app.assets)
+}

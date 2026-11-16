@@ -4,22 +4,16 @@
   "description": "",
   "main": "loader.js",
   "scripts": {
-    "dev": "nodemon",
-    "production": "pm2 start loader.js --name backend"
+    "dev": "node --watch loader.js",
+    "production": "node loader.js"
   },
   "author": "Felipe Rubel Borges",
   "license": "ISC",
   "dependencies": {
-    "body-parser": "^1.18.3",
-    "express": "^4.16.3",
-    "express-query-int": "^3.0.0",
-    "lodash": "^4.17.10",
-    "mongoose": "^8.10.2",
-    "mongoose-paginate": "^5.0.3",
-    "node-restful": "^0.2.6",
-    "pm2": "^3.0.3"
+    "express": "^4.22.3",
+    "mongoose": "^8.24.9"
   },
-  "devDependencies": {
-    "nodemon": "^1.18.3"
+  "engines": {
+    "node": ">=22"
   }
 }

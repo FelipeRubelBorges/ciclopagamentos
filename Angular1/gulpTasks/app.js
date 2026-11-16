@@ -1,34 +1,30 @@
 const gulp = require('gulp')
-const babel = require('gulp-babel')
-const uglify = require('gulp-uglify')
-const uglifycss = require('gulp-uglifycss')
+const terser = require('gulp-terser')
+const cleanCss = require('gulp-clean-css')
 const concat = require('gulp-concat')
-const htmlmin = require('gulp-htmlmin')
 
-gulp.task('app', ['app.html', 'app.css', 'app.js', 'app.assets'])
-
-gulp.task('app.html', () => {
+function html() {
     return gulp.src('app/**/*.html')
-    .pipe(htmlmin({ collapseWhitespace: true }))
-    .pipe(gulp.dest('public'))
-})
+        .pipe(gulp.dest('public'))
+}
 
-gulp.task('app.css', () => {
+function css() {
     return gulp.src('app/**/*.css')
-    .pipe(uglifycss({ "uglyComments": true }))
-    .pipe(concat('app.min.css'))
-    .pipe(gulp.dest('public/assets/css'))
-})
+        .pipe(concat('app.min.css'))
+        .pipe(cleanCss({ rebase: false }))
+        .pipe(gulp.dest('public/assets/css'))
+}
 
-gulp.task('app.js', () => {
-    return gulp.src('app/**/*js')
-    .pipe(babel({presets: ['env'] }))
-    .pipe(uglify())
-    .pipe(concat('app.min.js'))
-    .pipe(gulp.dest('public/assets/js'))
-})
+function js() {
+    return gulp.src('app/**/*.js')
+        .pipe(concat('app.min.js'))
+        .pipe(terser())
+        .pipe(gulp.dest('public/assets/js'))
+}
 
-gulp.task('app.assets', () => {
-    return gulp.src('assets/**/*.*')
-    .pipe(gulp.dest('public/assets'))
-})
+function assets() {
+    return gulp.src('assets/**/*.*', { encoding: false, allowEmpty: true })
+        .pipe(gulp.dest('public/assets'))
+}
+
+module.exports = { html, css, js, assets, build: gulp.parallel(html, css, js, assets) }
