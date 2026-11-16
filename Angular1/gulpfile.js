@@ -1,15 +1,7 @@
-const gulp = require ('gulp')
-const util = require ('gulp-util')
-const sequence = require ('run-sequence')
+const gulp = require('gulp')
+const app = require('./gulpTasks/app')
+const deps = require('./gulpTasks/deps')
+const server = require('./gulpTasks/server')
 
-require('./gulpTasks/app')
-require('./gulpTasks/deps')
-require('./gulpTasks/server')
-
-gulp.task('default', () => {
-    if(util.env.production){
-        sequence('deps', 'app')
-    }else{
-        sequence('deps', 'app', 'server')
-    }
-})
+exports.build = gulp.parallel(deps, app.build)
+exports.default = gulp.series(exports.build, server)

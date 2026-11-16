@@ -11,6 +11,6 @@
   "author": "Felipe Borges",
   "license": "ISC",
   "dependencies": {
-    "lodash": "^4.17.4"
+    "lodash": "^4.18.1"
   }
 }
