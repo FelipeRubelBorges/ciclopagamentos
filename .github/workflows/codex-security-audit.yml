@@ -1,0 +1,118 @@
+name: Repository security audit
+on:
+  push:
+    branches: [codex/security-scan-20261116]
+    paths: [.github/workflows/codex-security-audit.yml]
+permissions:
+  contents: read
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    strategy:
+      fail-fast: false
+      max-parallel: 12
+      matrix:
+        include: [{"repo":"Analise-e-Projetos-de-Sistemas-I","sha":"447a1df600cfe0720b892fad0892b1c87da66a4e"},{"repo":"nitrous","sha":"232415d79719790ae8d45f0e00c535b1e857df2b"},{"repo":"BlindWarrior","sha":"2a918c8ec09202a80a776d65fe8079c90a9f989e"},{"repo":"ciclopagamentos","sha":"b573860380879ff088127a707780f615621b21dd"},{"repo":"CursoCucumber","sha":"128bb6cdbf21cdc20aa5c14ba4be72f019d22ac8"},{"repo":"QAfullstack","sha":"58659b161eb2a0f7713284d5e2a2d103713790a6"},{"repo":"cypress-project","sha":"fd593e7788f7a0a279c8e0ad2460e921fdd216b5"},{"repo":"Cypress-gitlab","sha":"c19863d990d705ad6ff6d3da9cc0a3de14a9bb07"},{"repo":"playwright","sha":"2f366c2eaec7b5180e1989276a61015b077f5362"},{"repo":"CypressTest","sha":"94ebe85c28809f2ea0904e4fa695b46da1c45204"},{"repo":"NinjaOne","sha":"d53abab092c9143912ccc12b3f778b3b2b270ede"}]
+    steps:
+      - name: Check out public repository at the audited commit
+        env:
+          REPO: ${{ matrix.repo }}
+          COMMIT: ${{ matrix.sha }}
+        run: |
+          git init -q .
+          git fetch --quiet --no-tags "https://github.com/FelipeRubelBorges/$REPO.git" "$COMMIT"
+          git checkout --quiet --detach FETCH_HEAD
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
+        with:
+          node-version: '22'
+          package-manager-cache: false
+      - name: Install scanners
+        run: |
+          mkdir -p "$RUNNER_TEMP/scanners"
+          cd "$RUNNER_TEMP/scanners"
+          curl --silent --show-error --fail --location --retry 2 "https://github.com/google/osv-scanner/releases/download/v2.7.1/osv-scanner_linux_amd64" -o osv-scanner
+          echo "fb7dab19a8bd9bbe5c3189f09d4b7ee1820c9553a23bac202648a56efd2f6ee8  osv-scanner" | sha256sum -c
+          chmod +x osv-scanner
+          curl --silent --show-error --fail --location --retry 2 "https://github.com/gitleaks/gitleaks/releases/download/v8.30.1/gitleaks_8.30.1_linux_x64.tar.gz" -o gitleaks.tar.gz
+          echo "551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb  gitleaks.tar.gz" | sha256sum -c
+          tar -xzf gitleaks.tar.gz gitleaks
+          echo "$RUNNER_TEMP/scanners" >> "$GITHUB_PATH"
+      - name: Scan dependencies, source, and credential history
+        run: |
+          python3 - <<'PY'
+          import json, os, pathlib, subprocess, tempfile
+          
+          root = pathlib.Path.cwd()
+          tmp = pathlib.Path(tempfile.mkdtemp())
+          excluded = {'node_modules', '.git', 'vendor', 'target', 'coverage'}
+          def run(command, cwd=root, seconds=120, env=None):
+              try:
+                  return subprocess.run(command, cwd=cwd, capture_output=True, text=True, timeout=seconds, env=env)
+              except (subprocess.TimeoutExpired, OSError):
+                  return subprocess.CompletedProcess(command, 124, '', '')
+          
+          def emit(kind, data):
+              print('CODEX_SCAN ' + json.dumps([kind, data], separators=(',', ':')), flush=True)
+          
+          def files(*names):
+              for folder, dirs, fs in os.walk(root):
+                  dirs[:] = [d for d in dirs if d not in excluded]
+                  for n in names:
+                      if n in fs:
+                          yield pathlib.Path(folder) / n
+          
+          def parsed(result):
+              try:
+                  return json.loads(result.stdout)
+              except (ValueError, TypeError):
+                  return {}
+          
+          for file in files('package.json'):
+              folder = file.parent
+              relative = str(folder.relative_to(root))
+              result = run(['npm', 'audit', '--json', '--ignore-scripts'], folder)
+              out = parsed(result)
+              emit('npm', {
+                  'folder': relative, 'status': result.returncode, 'error': (out.get('error') or {}).get('code'),
+                  'summary': out.get('metadata', {}).get('vulnerabilities'),
+                  'findings': [
+                      {'name': n, 'severity': v['severity'], 'direct': v['isDirect'], 'nodes': v['nodes'],
+                       'fix': v.get('fixAvailable'), 'via': [i if isinstance(i,str) else {k:i.get(k) for k in ('url','range','title')} for i in v['via']]}
+                      for n, v in out.get('vulnerabilities', {}).items()
+                  ]
+              })
+          
+          for file in files('pom.xml', 'Gemfile.lock', 'yarn.lock'):
+              result = run(['osv-scanner', 'scan', 'source', '--format', 'json', '--lockfile', str(file)], seconds=110)
+              out = parsed(result)
+              hits = []
+              for source in out.get('results',[]):
+                  for item in source.get('packages', []):
+                      vuln = item.get('vulnerabilities') or []
+                      if vuln:
+                          hits.append({'package': item.get('package',{}), 'ids': [v.get('id') for v in vuln]})
+              emit('osv', {'file':str(file.relative_to(root)), 'status':result.returncode, 'valid_json':bool(out), 'findings':hits})
+          
+          for mode in ['dir','git']:
+              report = tmp / ('gitleaks-' + mode + '.json')
+              args = ['gitleaks',mode,'--redact=100','--report-format','json','--report-path',str(report),'--no-banner','--exit-code','0']
+              if mode == 'git':
+                  args.append('--log-opts=HEAD')
+              result = run([*args,'.'], seconds=90)
+              try:
+                  found = json.loads(report.read_text()) or []
+              except (OSError, ValueError):
+                  found = []
+              safe = [{'file':v.get('File'), 'line':v.get('StartLine'), 'rule':v.get('RuleID')} for v in found
+                      if not excluded.intersection(pathlib.PurePosixPath(v.get('File','')).parts)]
+              emit('secrets_'+mode, {'status':result.returncode, 'findings':safe[:80], 'total':len(safe)})
+          
+          result = run(['uvx', '--from', 'semgrep', 'semgrep', 'scan', '--quiet','--metrics','off',
+                        '--config','p/owasp-top-ten','--config','p/security-audit','--json',
+                        '--exclude','node_modules','--exclude','target','--exclude','vendor','.'], seconds=210)
+          out = parsed(result)
+          emit('code', {'status':result.returncode, 'valid_json':'results' in out, 'errors':len(out.get('errors',[])),
+                        'findings':[{'file':x['path'],'line':x['start']['line'],'rule':x['check_id'],'severity':x['extra']['severity']}
+                                    for x in out.get('results',[])][:100]})
+          PY
