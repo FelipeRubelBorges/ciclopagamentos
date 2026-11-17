@@ -1,0 +1,19 @@
+name: Rescan repository dependencies
+on: push
+permissions:
+  contents: read
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        repo: ["ciclopagamentos","Cypress-gitlab","CursoCucumber","playwright","nitrous","Analise-e-Projetos-de-Sistemas-I","cypress-project","BlindWarrior","CypressTest","QAfullstack","NinjaOne"]
+    steps:
+      - name: Checkout target
+        run: git clone --depth=1 https://github.com/FelipeRubelBorges/${{ matrix.repo }}.git target
+      - name: Scan dependencies
+        run: |
+          curl -fsSL https://github.com/google/osv-scanner/releases/download/v2.7.1/osv-scanner_linux_amd64 -o "$RUNNER_TEMP/osv"
+          chmod +x "$RUNNER_TEMP/osv"
+          "$RUNNER_TEMP/osv" scan source --recursive target
