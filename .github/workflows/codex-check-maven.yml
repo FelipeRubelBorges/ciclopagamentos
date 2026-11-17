@@ -1,0 +1,29 @@
+name: Check inherited Maven dependencies
+on:
+  push:
+    branches: [codex/security-scan-20261116]
+    paths: [.github/workflows/codex-check-maven.yml]
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - name: Resolve original Maven dependencies
+        run: |
+          git init -q .
+          git fetch --quiet --depth=1 https://github.com/FelipeRubelBorges/BlindWarrior.git 2a918c8ec09202a80a776d65fe8079c90a9f989e
+          git checkout --quiet --detach FETCH_HEAD
+          mvn -B dependency:tree || true
+      - name: Verify the updated Maven project
+        env:
+          POM: "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<project xmlns=\"http://maven.apache.org/POM/4.0.0\" xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\" xsi:schemaLocation=\"http://maven.apache.org/POM/4.0.0 http://maven.apache.org/maven-v4_0_0.xsd\">\n  <modelVersion>4.0.0</modelVersion>\n\n  <groupId>samples</groupId>\n  <artifactId>blind-warrior</artifactId>\n  <version>1.0.0-SNAPSHOT</version>\n  <packaging>jar</packaging>\n\n  <properties>\n    <maven.compiler.release>17</maven.compiler.release>\n    <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>\n  </properties>\n  <build>\n    <sourceDirectory>source</sourceDirectory>\n    <testSourceDirectory>tests</testSourceDirectory>\n  </build>\n\n  <dependencies>\n    <dependency>\n      <groupId>org.projectlombok</groupId>\n      <artifactId>lombok</artifactId>\n      <version>1.18.48</version>\n      <scope>provided</scope>\n    </dependency>\n    <dependency>\n      <groupId>junit</groupId>\n      <artifactId>junit</artifactId>\n      <version>4.13.2</version>\n      <scope>test</scope>\n    </dependency>\n  </dependencies>\n\n</project>\n"
+        run: |
+          printf '%s' "$POM" > pom.xml
+          mvn -B clean test
+          curl -fsSL "https://github.com/google/osv-scanner/releases/download/v2.7.1/osv-scanner_linux_amd64" -o "$RUNNER_TEMP/osv"
+          echo "fb7dab19a8bd9bbe5c3189f09d4b7ee1820c9553a23bac202648a56efd2f6ee8  $RUNNER_TEMP/osv" | sha256sum -c
+          chmod +x "$RUNNER_TEMP/osv"
+          "$RUNNER_TEMP/osv" scan source --format json --lockfile pom.xml > "$RUNNER_TEMP/osv.json" || true
+          node -e 'const q=require(process.env.RUNNER_TEMP+"/osv.json"); console.log("CODEX_OSV "+JSON.stringify((q.results??[]).flatMap(r=>r.packages.filter(p=>p.vulnerabilities?.length).map(p=>p.package.name))))'
