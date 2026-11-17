@@ -1,11 +1,17 @@
+const { cp, mkdir, readFile, writeFile } = require('node:fs/promises')
 const gulp = require('gulp')
-const terser = require('gulp-terser')
 const cleanCss = require('gulp-clean-css')
 const concat = require('gulp-concat')
 
-function html() {
-    return gulp.src('app/**/*.html')
-        .pipe(gulp.dest('public'))
+async function html() {
+    let index = await readFile('app/index.html', 'utf8')
+    for (const name of ['header.html', 'menu.html', 'footer.html']) {
+        const template = await readFile('app/template/' + name, 'utf8')
+        index = index.replace(' data-template="' + name + '">', () => '>' + template.trim())
+    }
+    await mkdir('public', { recursive: true })
+    await cp('app/template', 'public/template', { recursive: true })
+    await writeFile('public/index.html', index)
 }
 
 function css() {
@@ -15,16 +21,9 @@ function css() {
         .pipe(gulp.dest('public/assets/css'))
 }
 
-function js() {
-    return gulp.src('app/**/*.js')
-        .pipe(concat('app.min.js'))
-        .pipe(terser())
-        .pipe(gulp.dest('public/assets/js'))
-}
-
 function assets() {
     return gulp.src('assets/**/*.*', { encoding: false, allowEmpty: true })
         .pipe(gulp.dest('public/assets'))
 }
 
-module.exports = { html, css, js, assets, build: gulp.parallel(html, css, js, assets) }
+module.exports = { html, css, assets, build: gulp.parallel(html, css, assets) }

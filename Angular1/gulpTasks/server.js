@@ -15,6 +15,5 @@ module.exports = function server(done) {
 
     gulp.watch('app/**/*.html', app.html)
     gulp.watch('app/**/*.css', app.css)
-    gulp.watch('app/**/*.js', app.js)
     gulp.watch('assets/**/*.*', app.assets)
 }
